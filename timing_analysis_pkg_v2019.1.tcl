@@ -6,13 +6,22 @@
 ## Please do not make any changes to this file.
 #########################################################################################
 namespace eval timing_analysis {
-  proc get_sn {index} {
+  proc remove_es {x_part} {
+    set x_part_seg [split $x_part "-"]
+    set x_part_seg_last [lindex $x_part_seg end]
+    if {[regexp {es*} $x_part_seg_last]==1} {
+      set x_part_seg_update [lrange $x_part_seg 0 end-1]
+      set x_part [join $x_part_seg_update "-"]
+    }
+    return $x_part
+  }
+  proc get_sn {index phase} {
     if {$index<10} {
       set sn "S0$index"
     } else {
       set sn "S$index"
     }
-    return $sn
+    return ${sn}_${phase}
   }
 
   proc report_critical_cells {fn mycells} {
@@ -54,12 +63,20 @@ namespace eval timing_analysis {
   proc create_timing_report {fn paths} {
     set fid [open ${fn}.csv w]
     puts $fid "#\n# File created on [clock format [clock seconds]] \n#\n"
-    puts $fid "Startpoint, Endpoint, StartClock, EndClock, Requirement, Slack, LogicLevel,\
+    puts $fid "PathType, StartCell, EndCell, StartPoint, EndPoint, StartClock, EndClock, Requirement, Slack, LogicLevel,\
     #Lut, PathDelay, LogicDelay, LogicDelay%, NetDelay, NetDelay%, Skew, Uncertainty, Inter-SLRCompensation"
     set myf "%.2f"
     foreach paths_i $paths {
+      set delay_type  [get_property DELAY_TYPE       $paths_i]
+      switch -exact -- $delay_type {
+        "max" {set path_type "setup"}
+        "min" {set path_type "hold"}
+        default {set path_type $delay_type}
+      }
       set start_point [get_property STARTPOINT_PIN   $paths_i]
+      set start_cell  [get_property REF_NAME [get_cells -of [get_pins $start_point]]]
       set end_point   [get_property ENDPOINT_PIN     $paths_i]
+      set end_cell    [get_property REF_NAME [get_cells -of [get_pins $end_point]]]
       set start_clk   [get_property STARTPOINT_CLOCK $paths_i]
       if {[llength $start_clk] == 0} {set start_clk No}
       set end_clk [get_property ENDPOINT_CLOCK $paths_i]
@@ -104,7 +121,7 @@ namespace eval timing_analysis {
       }
       set compensation [get_property INTER_SLR_COMPENSATION $paths_i]
       if {[llength $compensation]==0} {set compensation "Empty"}
-      puts $fid "$start_point, $end_point, $start_clk, $end_clk, $req, $slack, $logic_level,\
+      puts $fid "$path_type, $start_cell, $end_cell, $start_point, $end_point, $start_clk, $end_clk, $req, $slack, $logic_level,\
       $num_luts, $path_delay, $logic_delay, $logic_delay_percent, $net_delay, $net_delay_percent,\
       $skew, $uncertainty, $compensation"
     }
@@ -123,9 +140,10 @@ namespace eval timing_analysis {
   }
 
   proc my_timing_summary {sn dcp_type {en 1}} {
+    set syn_dcp {1 2}
     if {$en==1} {
       puts "Start section $sn: report_timing_summary"
-      if {$dcp_type==1} {
+      if {$dcp_type in $syn_dcp} {
         report_timing_summary -no_check_timing -no_header -setup -max 50 -nworst 1 -unique_pins \
         -name ${sn}_timing_summary_analysis -file ${sn}_timing_summary_analysis.rpt
       } else {
@@ -137,9 +155,10 @@ namespace eval timing_analysis {
   }
 
   proc my_neg_slack_timing_report {sn dcp_type {en 1}} {
+    set syn_dcp {1 2}
     if {$en==1} {
       puts "Start section $sn: report_timing: 100 negative slack paths"
-      if {$dcp_type==1} {
+      if {$dcp_type in $syn_dcp} {
         set paths [get_timing_paths -setup -max_paths 100 -nworst 1 -unique_pins \
         -slack_lesser_than 0 -quiet]
       } else {
@@ -252,15 +271,17 @@ namespace eval timing_analysis {
 
 
   proc report_paths_crossing_slrs {sn dcp_type en_get_cells_crossing_slrs {en}} {
+    set place_dcp {3 4}
+    set route_dcp {5 6}
     if {$en==1} {
-      if {$dcp_type==2} {
+      if {$dcp_type in $place_dcp} {
         set xneta [xilinx::designutils::get_inter_slr_nets]
         set xnets [filter $xneta "TYPE != GLOBAL_CLOCK"]
-      } elseif {$dcp_type==3} {
+      } elseif {$dcp_type in $route_dcp} {
         set xnets [xilinx::designutils::get_sll_nets]
       } else {
         puts "The nets crossing SLRs cannot be obtained under this DCP"
-        return
+        return 
       }
       set xnets_len [llength $xnets]
       if {$xnets_len>0} {
@@ -522,9 +543,10 @@ namespace eval timing_analysis {
   }
 
   proc report_congestion_level {sn dcp_type {en 1}} {
+    set syn_dcp {1 2}
     if {$en==1} {
       puts "Start section $sn: report_congestion_level"
-      if {$dcp_type==1} {
+      if {$dcp_type in $syn_dcp} {
         puts "Congestion level is not available under current stage of DCP"
         return
       } else {
@@ -539,15 +561,16 @@ namespace eval timing_analysis {
     if {$en==1} {
       puts "Start section $sn: report_qor"
       set fn ${sn}_qor_suggestions_analysis
-      file mkdir $fn
       if {$vivado_version<2018.3} {
+        file mkdir $fn
         report_qor_suggestions -report_all_paths -evaluate_pipelining -output_dir ./$fn
       } elseif {$vivado_version==2018.3} {
+        file mkdir $fn
         report_qor_suggestions -report_all_paths -evaluate_pipelining -output_dir ./$fn -name $fn
       } else {
         report_qor_suggestions -report_all_paths -evaluate_pipelining -name $fn
-        write_qor_suggestion -all ${fn}.rqs
-        write_qor_suggestions -tcl_output_dir $fn ./  
+        write_qor_suggestion -all -force ${fn}.rqs
+        #write_qor_suggestions -force -tcl_output_dir $fn $fn  
       }
       puts "Complete section $sn: report_qor"
     }
@@ -563,13 +586,14 @@ namespace eval timing_analysis {
   }
 
   proc report_failfast {sn slrs dcp_type {en 1} } {
+    set syn_dcp {1 2}
     if {$en==1} {
       puts "Start section $sn: report_failfast"
       set fn ${sn}_failfast_analysis
       if {$slrs==1} {
         xilinx::designutils::report_failfast -detailed_reports impl -file ${fn}.rpt
       } else {
-        if {$dcp_type==1} {
+        if {$dcp_type in $syn_dcp} {
           xilinx::designutils::report_failfast -detailed_reports impl -file ${fn}.rpt
         } else {
           xilinx::designutils::report_failfast -by_slr -detailed_reports impl -file ${fn}.rpt
@@ -625,13 +649,14 @@ namespace eval timing_analysis {
   }
 
   proc high_fanout_nets {sn slrs dcp_type {en 1}} {
+    set syn_dcp {1 2}
     if {$en==1} {
       puts "Start section $sn: report_high_fanout_nets"
       set fn ${sn}_high_fanout_nets_analysis
       if {$slrs==1} {
         report_high_fanout_nets -name ${fn} -file ${fn}.rpt
       } else {
-        if {$dcp_type==1} {
+        if {$dcp_type in $syn_dcp} {
           report_high_fanout_nets -name ${fn} -file ${fn}.rpt
         } else {
           report_high_fanout_nets -slr -name ${fn} -file ${fn}.rpt

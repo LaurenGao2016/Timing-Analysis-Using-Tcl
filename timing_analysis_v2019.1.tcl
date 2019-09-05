@@ -14,9 +14,12 @@
 # Note: 2018.2.1 is not accpetable
 #-------> dcp_type
 # the value can be:
-# 1 => post_synth, post_opt
-# 2 => post_place, post_phys_opt (after place_design)
-# 3 => post_route, post_phys_opt (after route_design)
+# 1 => post_synth 
+# 2 => post_opt
+# 3 => post_place
+# 4 => post_phys_opt (after place_design)
+# 5 => post_route
+# 6 => post_phys_opt (after route_design)
 #-------> mode
 # 1 => user defined mode
 # 2 => default mode
@@ -32,7 +35,7 @@ source timing_analysis_pkg_v2019.1.tcl
 #set parameters
 #########################################################################################
 set vivado_version 2019.1
-set dcp_type       3
+set dcp_type       5
 set dcp_is_open    0
 set dcp_name       *routed.dcp
 set mode           3
@@ -123,8 +126,8 @@ cd ./Report
 # check whether dcp_type is reasonable
 # check whether mode is reasonable
 #########################################################################################
-if {[regexp {[1-3]} $dcp_type] == 0} {
-  puts "The range of dcp_type should be from 1 to 3."
+if {[regexp {[1-6]} $dcp_type] == 0} {
+  puts "The range of dcp_type should be from 1 to 6."
   return -code 1
 } else {
   puts "The variable dcp_type is reasonable. Move on."
@@ -134,6 +137,15 @@ if {[regexp {[1-3]} $mode] == 0} {
   return -code 1
 } else {
   puts "The variable mode is reasonable. Move on."
+}
+switch -exact -- $dcp_type {
+  1 {set phase "Syn"}
+  2 {set phase "Opt"}
+  3 {set phase "Place"}
+  4 {set phase "PhyPlace"}
+  5 {set phase "Route"}
+  6 {set phase "PhyRoute"}
+  default {set phase "X"}
 }
 #########################################################################################
 # get exact check items
@@ -232,7 +244,7 @@ switch -exact $mode {
 #########################################################################################
 set 7_family   [list artix7 kintex7 virtex7 zynq]
 set us_family  [list kintexu virtexu]
-set usp_family [list kintexuplus virtexuplus zynquplus]
+set usp_family [list kintexuplus virtexuplus zynquplus virtexuplusHBM]
 set x_part     [get_property PART [current_design]]
 set x_family   [get_property C_FAMILY [get_parts $x_part]]
 set x_speed    [get_property SPEED    [get_parts $x_part]]
@@ -313,25 +325,25 @@ puts "##########################################################################
 #########################################################################################
 #Section 01: check_timing
 set i 1
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_check_timing $sn $en_check_timing
 puts "##################################################################################"
 #########################################################################################
 #Section 02: report_timing_summary
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_timing_summary $sn $dcp_type $en_timing_summary
 puts "##################################################################################"
 #########################################################################################
 #Section 03: report_timing: 100 negative slack paths
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_neg_slack_timing_report $sn $dcp_type $en_neg_slack_timing
 puts "##################################################################################"
 #########################################################################################
 #Section 04: report_block2block: 100 paths from blocks to blocks
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$used_blocks_num>0} {
   timing_analysis::report_block2block $sn $used_blocks $en_block2block
 } else {
@@ -341,7 +353,7 @@ puts "##########################################################################
 #########################################################################################
 #Section 05: report_timing: paths with higher logic level
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 set index $ll_f,$x_speed
 set delay [timing_analysis::get_timing_base $index $is_accurate]
 if {$clock_num>0} {
@@ -353,7 +365,7 @@ puts "##########################################################################
 #########################################################################################
 #Section 06: report_paths_crossing_slrs
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$x_slrs>1} {
   timing_analysis::report_paths_crossing_slrs $sn $dcp_type $en_get_cells_crossing_slrs $en_crossing_slrs
 }
@@ -361,7 +373,7 @@ puts "##########################################################################
 #########################################################################################
 #Section 07: get_no_reg_bram
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$used_bram_num>1} {
   timing_analysis::get_no_reg_bram $sn $used_bram $en_check_bram
 }
@@ -369,7 +381,7 @@ puts "##########################################################################
 #########################################################################################
 #Section 08: get_no_reg_uram
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$used_uram_num>1} {
   timing_analysis::get_no_reg_uram $sn $used_uram $en_check_uram
 }
@@ -377,7 +389,7 @@ puts "##########################################################################
 #########################################################################################
 #Section 09: get_no_mreg_dsp
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$used_dsp_num>1} {
   timing_analysis::get_no_mreg_dsp $sn $used_dsp $en_check_dsp_mreg
 }
@@ -385,7 +397,7 @@ puts "##########################################################################
 #########################################################################################
 #Section 10: get_no_preg_dsp
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$used_dsp_num>1} {
   timing_analysis::get_no_preg_dsp $sn $used_dsp $en_check_dsp_preg
 }
@@ -393,97 +405,97 @@ puts "##########################################################################
 #########################################################################################
 #Section 11: get_lower_depth_srl
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::get_lower_depth_srl $sn $en_check_lower_srl
 puts "##################################################################################"
 #########################################################################################
 #Section 12: get_combined_lut
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::get_combined_lut $sn $en_check_combined_lut
 puts "##################################################################################"
 #########################################################################################
 #Section 13: get_muxfx
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::get_muxfx $sn $en_check_muxfx
 puts "##################################################################################"
 #########################################################################################
 #Section 14: get_latch
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::get_latch $sn $en_check_latch
 puts "##################################################################################"
 #########################################################################################
 #Section 15: report_clock_characteristics
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::report_clock_characteristics $sn $max_paths $en_clock_characteristics
 puts "##################################################################################"
 #########################################################################################
 #Section 16: report_clock_networks
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_clock_networks $sn $en_clock_networks
 puts "##################################################################################"
 #########################################################################################
 #Section 17: report_cdc
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_report_cdc $sn $en_cdc
 puts "##################################################################################"
 #########################################################################################
 #Section 18: report_clock_interaction
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_clock_interaction $sn $en_clock_interaction
 puts "##################################################################################"
 #########################################################################################
 #Section 19: report_congestion_level
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::report_congestion_level $sn $dcp_type $en_congestion
 puts "##################################################################################"
 #########################################################################################
 #Section 20: report_exceptions
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_report_exceptions $sn $en_exceptions
 puts "##################################################################################"
 #########################################################################################
 #Section 21: report_utilization
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_report_utilization $sn $en_util
 puts "##################################################################################"
 #########################################################################################
 #Section 22: report_methodolgy
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::my_report_methodology $sn $en_methodology
 puts "##################################################################################"
 #########################################################################################
 #Section 23: report_qor_suggestions
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::report_qor $sn $vivado_version $en_qor
 puts "##################################################################################"
 #########################################################################################
 #Section 24: report_failfast
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::report_failfast $sn $x_slrs $dcp_type $en_failfast
 puts "##################################################################################"
 #########################################################################################
 #Section 25: report_high_fanout_nets
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 timing_analysis::high_fanout_nets $sn $x_slrs $dcp_type $en_high_fanout_nets
 puts "##################################################################################"
 #########################################################################################
 #Section 26: report_ram_utilization
 incr i
-set sn [timing_analysis::get_sn $i]
+set sn [timing_analysis::get_sn $i $phase]
 if {$vivado_version>2018.2} {
   timing_analysis::my_ram_util $sn $en_ram_util
 }
